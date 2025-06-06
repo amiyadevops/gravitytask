@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+
+    environment {
+        // Set your environment variables
+        GIT_REPO = 'https://github.com/your-org/your-repo.git'
+        DEPLOY_USER = 'your-ssh-username'
+        DEPLOY_HOST = 'your.gce.instance.ip'
+        SSH_KEY_ID = 'gce-ssh-key' // This is the ID of SSH key stored in Jenkins credentials
+        APP_DIR = '/var/www/your-app'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: "${env.GIT_REPO}"
+            }
+        }
+
+        stage('Build') {
+            steps {
+                echo 'Building application...'
+                sh './build.sh' // Replace with actual build command
+            }
+        }
+
+        stage('Test') {
+            steps {
+                echo 'Running tests...'
+                sh './run_tests.sh' // Replace with your actual test command
+            }
+        }
+
+        stage('Deploy') {
+            when {
+                expression {
+                    return currentBuild.result == null || currentBuild.result == 'SUCCESS'
+                }
+            }
+            steps {
+                echo 'Deploying to Compute Engine...'
+                sshagent (credentials: ["${env.SSH_KEY_ID}"]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${env.DEPLOY_USER}@${env.DEPLOY_HOST} << 'EOF'
+                        cd ${env.APP_DIR}
+                        git pull origin main
+                        ./deploy.sh
+                    EOF
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finished.'
+        }
+        success {
+            echo 'Deployment successful.'
+        }
+        failure {
+            echo 'Pipeline failed. No deployment performed.'
+        }
+    }
+}
